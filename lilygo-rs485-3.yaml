@@ -69,8 +69,9 @@ api:
 
 
 ota:
-  - platform: esphome      # Voor updates via de HA Dashboard
-  - platform: web_server   # DIT voegt de upload-knop toe aan de webinterface
+  - platform: esphome      # For updates via the HA Dashboard
+  - platform: web_server   # This includes upload button in webinterface for OTA updates
+  
 
 wifi:
   ssid: !secret wifi_ssid
@@ -79,17 +80,18 @@ wifi:
   reboot_timeout: 15min
   power_save_mode: none
   output_power: 12dB
-  use_address: 192.168.0.103
+            # # uncomment for static IP Setting, put your IP Informations here  ##
+#  use_address: 192.168.0.103
 
-  manual_ip:
-    static_ip: 192.168.0.103
-    gateway: 192.168.0.1
-    subnet: 255.255.255.0
+#  manual_ip:
+#    static_ip: 192.168.0.103
+#    gateway: 192.168.0.1
+#    subnet: 255.255.255.0
 
   # Enable fallback hotspot (captive portal) in case wifi connection fails
   ap:
     ssid: "Lilygo-Rs485-2 Fallback Hotspot"
-    password: "12345678"
+    password: "8 numbers"
 
 
 
@@ -169,7 +171,7 @@ modbus_controller:
 
 # Start Original
 #   https://github.com/fonske/MarstekVenus-LilygoRS485 
-# Uart logging on/off switch (but overrules logger info )
+# Uart logging on/off switch (only for testing, this overrules normal logger info )
 #switch:
 #  - platform: template
 #    name: UART Logging
