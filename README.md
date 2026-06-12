@@ -1,4 +1,4 @@
-# MarstekVenus-LilygoRS485-V3
+# MarstekVenus-E Version 3 on LilygoRS485 ESP32
 Marstek Venus-E V3 Modbus controls on Lilygo RS485 ESP32
 
 THIS CONFIG IS ONLY FOR THE LILYGO T-CAN485, ITS NOT TESTET ON ANY OTHER DEVICE
