@@ -11,14 +11,20 @@ added advanced sdkconfig_options from: https://github.com/whyisthisbroken/marste
 
 V3 addings from: https://github.com/fonske/MarstekVenus-LilygoRS485
 
-# The rest is added by JP :-)
+The rest is added by JP :-)
+
 rearranged sorting_groups in webserver
 
 combined V2 (Superduper1969) with V3 (Fonske)
 
+added LilyGo Restart and Marstek Restart button
+
 Due to limitations in V3: the Marstek RS485 control mode can only be disabled via a script on the web server 
+
 --- Therefore, you see the original control only as info ---
-When you press the button, it takes some seconds for the script to run
---- You can still see and use the control in Home Assistant and use it normally with your Automations. !!!
+
+When you press the RS485 buttons , it takes some seconds for the scripts to run
+
+--- You can still see and use "Marstek RS485 Control Mode" in Home Assistant and use it normally with your Automations. !!!
 
 Added group: RS485 Control only for use in HA
