@@ -1,0 +1,2024 @@
+esphome:
+  name: lilygo-rs485-3
+  friendly_name: LILYGO RS485-3
+  on_boot:
+    priority: -100
+    then:
+      - delay: 15s
+      - logger.log:
+          level: INFO
+          format: >-
+            !!! INFO: Due to limitations in V3: the Marstek RS485 control mode
+            can only be disabled via a script on the web server --- Therefore, you
+             see the original control only as info --- When you press the button, it takes some seconds for the script to run
+             --- You can still see and use the control in Home Assistant and use it
+            normally with your Automations. !!!
+      - delay: 25s
+      - component.update: battery_remaining_capacity
+
+
+##THIS CONFIG IS ONLY FOR THE LILYGO T-CAN485, ITS NOT TESTET ON ANY OTHER DEVICE##
+## V2 from: https://github.com/Superduper1969/MarstekVenus-LilygoRS485 ##
+## V2 from: https://github.com/whyisthisbroken/marstek-lilygo-rs485?hl=nl-NL ##
+## V3 from: https://github.com/fonske/MarstekVenus-LilygoRS485 ##
+## The rest is added by JP :-) ##
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+    advanced:
+      minimum_chip_revision: "3.1" 
+      sram1_as_iram: true
+      compiler_optimization: PERF
+      disable_libc_locks_in_iram: true
+      enable_lwip_tcpip_core_locking: true
+      enable_lwip_mdns_queries: false
+    sdkconfig_options:
+      CONFIG_BOOTLOADER_LOG_LEVEL_WARN: "y"
+      CONFIG_BT_ENABLED: "n"
+      CONFIG_ESP32_ALLOW_RTC_FAST_MEM_AS_HEAP: "y"
+      CONFIG_ESP32_WIFI_AMPDU_RX_ENABLED: "y"
+      CONFIG_ESP32_WIFI_AMPDU_TX_ENABLED: "y"
+      CONFIG_ESP32_WIFI_IRAM_OPT: "y"
+      CONFIG_ESP32_WIFI_RX_IRAM_OPT: "y"
+      CONFIG_ESP32_WIFI_STATIC_RX_BUFFER_NUM: "16"   
+      CONFIG_ESPTOOLPY_FLASHFREQ_80M: "y"
+      CONFIG_ESPTOOLPY_FLASHMODE_QIO: "y"
+      CONFIG_ESPTOOLPY_FLASHSIZE_4MB: "y"
+      CONFIG_LOG_MAXIMUM_LEVEL_INFO: "y"
+      CONFIG_LWIP_IRAM_OPTIMIZATION: "y"
+      CONFIG_LWIP_IPV6: "n"
+      CONFIG_LWIP_SO_REUSE: "y"
+      CONFIG_LWIP_STATS: "n"
+      CONFIG_LWIP_TCPIP_RECVMBOX_SIZE: "32"
+      CONFIG_LWIP_TCP_MSS: "1436"
+      CONFIG_LWIP_TCP_SND_BUF_DEFAULT: "5744"
+      CONFIG_LWIP_TCP_WND_DEFAULT: "5744"
+      CONFIG_NEWLIB_NANO_FORMAT: "y"
+      CONFIG_UART_ISR_IN_IRAM: "y"
+      CONFIG_ESP_TASK_WDT_TIMEOUT_S: "20"   # Was 10, geef meer tijd
+
+
+logger:
+  baud_rate: 0
+  level: INFO
+
+# Enable Home Assistant API
+api:
+
+
+ota:
+  - platform: esphome      # Voor updates via de HA Dashboard
+  - platform: web_server   # DIT voegt de upload-knop toe aan de webinterface
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: false
+  reboot_timeout: 15min
+  power_save_mode: none
+  output_power: 12dB
+  use_address: 192.168.0.103
+
+  manual_ip:
+    static_ip: 192.168.0.103
+    gateway: 192.168.0.1
+    subnet: 255.255.255.0
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Lilygo-Rs485-2 Fallback Hotspot"
+    password: "12345678"
+
+
+
+captive_portal:
+
+web_server:
+  port: 80
+  version: 3
+  include_internal: false
+  local: true
+  sorting_groups:
+    - id: Rs485
+      name: "RS485"
+      sorting_weight: -60
+    - id: Control1
+      name: "RS485 Control only for use in HA"
+      sorting_weight: -50
+    - id: Controls
+      name: "Controls"
+      sorting_weight: -40
+    - id: Info
+      name: "Info"
+      sorting_weight: -30
+    - id: Warnings
+      name: "Warnings"
+      sorting_weight: -20
+    - id: Diagnostic
+      name: "Diagnostic"
+      sorting_weight: -10
+
+## Using Home Assistant for Time sync
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+
+##Pins required for LilyGo T-CAN485 board
+output:
+  - platform: gpio
+    id: ENABLE_PIN # Enable the chip
+    pin:
+      number: GPIO19
+      inverted: true
+  - platform: gpio
+    id: SE_PIN # Enable autodirection
+    pin:
+      number: GPIO17
+      inverted: true
+  - platform: gpio
+    id: ENABLE_5V_PIN # Enable 5V pin for RS485 chip
+    pin:
+      number: GPIO16
+      inverted: true
+
+# Configure UART
+uart:
+  - id: mod_bus
+    rx_pin: GPIO21
+    tx_pin: GPIO22
+    baud_rate: 115200
+    data_bits: 8
+    stop_bits: 1
+    parity: NONE
+
+modbus:
+  - uart_id: mod_bus
+    id: modbus1
+    send_wait_time: 50ms
+
+modbus_controller:
+  - id: mt
+    address: 0x1
+    modbus_id: modbus1
+    setup_priority: -100
+    command_throttle: 50ms
+    update_interval: 10s
+    offline_skip_updates: 5
+
+# Start Original
+#   https://github.com/fonske/MarstekVenus-LilygoRS485 
+# Uart logging on/off switch (but overrules logger info )
+#switch:
+#  - platform: template
+#    name: UART Logging
+#    id: uart_debug_switch
+#    icon: mdi:text
+#    restore_mode: ALWAYS_OFF
+#    optimistic: true
+#    turn_on_action:
+#      - logger.set_level: VERBOSE
+#    turn_off_action:
+#      - logger.set_level: INFO
+#    entity_category: diagnostic
+#    web_server:
+#      sorting_group_id: Controls
+#      sorting_weight: 14
+#  End original
+
+
+text_sensor:
+# Start  original
+  - name: "Device Name"
+    id: device_name
+    icon: mdi:rename-outline
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 31000
+    register_count: 10
+    response_size: 20
+    skip_updates: 60 # 5 minutes
+    entity_category: diagnostic
+    web_server:
+      sorting_group_id: Diagnostic
+      sorting_weight: 9
+
+  - name: "VNS Version"
+    id: vns_version_text
+    icon: mdi:factory
+    platform: template
+    update_interval: never  # updates only when sensor triggers
+    entity_category: diagnostic
+    web_server:
+      sorting_group_id: Diagnostic
+      sorting_weight: 10
+
+  - name: "EMS Version"
+    id: ems_version_text
+    icon: mdi:factory
+    platform: template
+    update_interval: never  # updates only when sensor triggers
+    entity_category: diagnostic
+    web_server:
+      sorting_group_id: Diagnostic
+      sorting_weight: 11
+
+  - name: "BMS Version"
+    id: bms_version_text
+    icon: mdi:factory
+    platform: template
+    update_interval: never  # updates only when sensor triggers
+    entity_category: diagnostic
+    web_server:
+      sorting_group_id: Diagnostic
+      sorting_weight: 12
+# End Original
+
+    # Start----- JP added lots of templates ---------#
+#  - platform: template
+#    name: "Software Version"    # Gives no Info
+#    id: software_version_text
+#    icon: mdi:factory
+#    update_interval: never
+#    entity_category: diagnostic
+#    web_server:
+#      sorting_group_id: Diagnostic
+#      sorting_weight: 8
+
+
+  - platform: template
+    name: "Marstek Inverter State"
+    id: "marstek_inverter_state"
+    icon: mdi:sine-wave
+    lambda: |-
+      switch (int(id(inverter_state).state)) {
+        case 0: return std::string("Sleep");
+        case 1: return std::string("Standby");
+        case 2: return std::string("Charge");
+        case 3: return std::string("Discharge");
+        case 4: return std::string("Fault");
+        case 5: return std::string("Idle");
+        case 6: return std::string("AC bypass");
+        default: return std::string("Unknown");
+      };
+    update_interval: 5s
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 4
+
+  - platform: wifi_info
+    ip_address:
+      name: ESPHome IP
+      icon: mdi:ip
+      web_server:
+        sorting_group_id: Diagnostic
+        sorting_weight: 6
+    ssid:
+      name: ESPHome SSID
+      icon: mdi:wifi
+      web_server:
+        sorting_group_id: Diagnostic
+        sorting_weight: 5
+
+  - platform: version
+    name: ESP Version
+    hide_timestamp: true
+    disabled_by_default: false
+    icon: mdi:new-box
+    entity_category: diagnostic
+    web_server:
+      sorting_group_id: Diagnostic
+      sorting_weight: 19
+
+  - platform: modbus_controller
+    id: wifi_status
+    name: "Battery Wifi Status"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 30300
+    raw_encode: NONE
+    icon: mdi:wifi-alert
+    entity_category: diagnostic
+    skip_updates: 20
+    lambda: |-
+      uint16_t int_mode = (data[item->offset] << 8) + data[item->offset+1];
+      ESP_LOGD("main","Parsed operation mode int : %d", int_mode);
+      std::string mode_str;
+      switch (int_mode) {
+        case 0: mode_str = "Disconnected"; break;
+        case 1: mode_str = "Connected"; break;
+      }
+      return mode_str;
+    web_server:
+      sorting_group_id: Diagnostic
+      sorting_weight: 14
+
+  - platform: modbus_controller
+    id: bt_status
+    name: "BT Status"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 30301
+    raw_encode: NONE
+    icon: mdi:home-heart
+    entity_category: diagnostic
+    skip_updates: 20
+    lambda: |-
+      uint16_t int_mode = (data[item->offset] << 8) + data[item->offset+1];
+      ESP_LOGD("main","Parsed operation mode int : %d", int_mode);
+      std::string mode_str;
+      switch (int_mode) {
+        case 0: mode_str = "Disconnected"; break;
+        case 1: mode_str = "Active after boot"; break;
+        case 2: mode_str = "Connected"; break;
+        case 3: mode_str = "Active"; break;
+      }
+      return mode_str;
+    web_server:
+      sorting_group_id: Diagnostic
+      sorting_weight: 15
+
+  - platform: modbus_controller
+    id: cloud_status
+    name: "Cloud Status"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 30302
+    raw_encode: NONE
+    icon: mdi:home-heart
+    entity_category: diagnostic
+    skip_updates: 20
+    lambda: |-
+      uint16_t int_mode = (data[item->offset] << 8) + data[item->offset+1];
+      ESP_LOGD("main","Parsed operation mode int : %d", int_mode);
+      std::string mode_str;
+      switch (int_mode) {
+        case 0: mode_str = "Disconnected"; break;
+        case 1: mode_str = "Connected"; break;
+      }
+      return mode_str;
+    web_server:
+      sorting_group_id: Diagnostic
+      sorting_weight: 16
+
+
+# Added by JP, address 42000 can only be set to "Enabled", 
+# Control Mode has to be set in Marstek app or/and also via User Work Mode to "Manual"
+
+  - platform: template
+    name: "Marstek RS485 Control Mode"
+    id: rs485_control_mode_label
+    web_server:
+      sorting_group_id: Rs485
+      sorting_weight: 1
+
+  - platform: modbus_controller
+    modbus_controller_id: mt
+    name: "RS485 Control Raw"
+    address: 42000
+    register_type: holding
+    raw_encode: HEXBYTES
+    internal: true  # verberg in webserver
+    on_value:
+          then:
+            - lambda: |-
+                static std::string last_val = "";
+                if (x != last_val) {
+                  const char* label;
+                  if (x == "55aa") label = "enabled";
+                  else if (x == "55bb") label = "disabled";
+                  else label = x.c_str();
+                  id(rs485_control_mode_label).publish_state(label);
+                  ESP_LOGI("control", "RS485 control mode -> %s", label);
+                  if (x == "55bb") {
+                    ESP_LOGW("control", "Marstek App has controle !");
+                  }
+                  last_val = x;
+                }
+
+
+# Info: set on_boot on top of yaml
+#esphome:
+#  on_boot:
+#    then:
+#      - text_sensor.template.publish:
+#          id: rs485_info_label
+#          state: "disabling via Marstek app"
+
+
+
+# Error V3 :
+            #  - platform: modbus_controller
+            #    id: power_restriction_discharge
+            #    name: "Marstek Power restriction"
+            #    address: 41010
+   
+
+
+
+    # JP added Lilygo Restart button  #
+
+script:
+  - id: rs485_disable_script
+    then:
+      - select.set:
+          id: lilygo_rs485_marstek_user_work_mode
+          option: "manual"
+      - delay: 12s
+      - select.set:
+          id: lilygo_rs485_marstek_user_work_mode
+          option: "anti-feed"
+
+  - id: rs485_enable_script
+    then:
+      - select.set:
+          id: lilygo_rs485_marstek_rs485_control_mode
+          option: "enable"
+
+
+button:
+  - platform: template
+    name: "RS485 Mode -> Disable"
+    icon: mdi:toggle-switch-off
+    web_server:
+      sorting_group_id: Rs485
+      sorting_weight: 3
+    on_press:
+      then:
+        - script.execute: rs485_disable_script
+
+  - platform: template
+    name: "RS485 Mode -> Enable"
+    icon: mdi:toggle-switch
+    web_server:
+      sorting_group_id: Rs485
+      sorting_weight: 2
+    on_press:
+      then:
+        - script.execute: rs485_enable_script
+
+
+  - platform: restart
+    name: "LilyGo Restart"
+    web_server:
+      sorting_group_id: Controls
+      sorting_weight: 10
+
+     # JP added Marstek Restart button  #     
+  - platform: template
+    name: "Marstek Device Restart"
+    id: marstek_device_restart
+    icon: mdi:restart
+    on_press:
+      - lambda: |-
+          esphome::modbus_controller::ModbusController *controller = id(mt);
+          if (controller != nullptr) {
+            std::vector<uint16_t> data = {0x55AA};
+            controller->queue_command(
+              esphome::modbus_controller::ModbusCommandItem::create_write_single_command(
+                controller, 41000, data[0]
+              )
+            );
+            ESP_LOGI("modbus", "Device restart command verzonden");
+          }
+    web_server:
+      sorting_group_id: Controls
+      sorting_weight: 13
+
+  - platform: template
+    name: "RS485 Control Mode: Info -->"
+    id: marstek_rs485_text
+    icon: mdi:information-outline
+    web_server:
+      sorting_group_id: Rs485
+      sorting_weight: 4
+    on_press:
+      then:
+        - logger.log:
+            level: Info
+            format: >-
+              !!!
+              INFO: Due to limitations in V3: the Marstek RS485 control mode can only be disabled via a script on the web server. Therefore, you will not see the original control. -- 
+              The script takes some seconds to run --
+              You can still see the control in Home Assistant and use it normally with your automations.
+              !!!
+
+  
+binary_sensor:
+  - platform: status
+    name: "ESP WiFi Status"
+    id: "esp_wifi_status"
+    icon: mdi:wifi-alert
+    web_server:
+      sorting_group_id: Diagnostic
+      sorting_weight: 4
+
+  - platform: modbus_controller
+    name: "Marstek PLL Abnormal Restart"
+    id: "pll_abnormal_restart"
+    icon: mdi:flash-triangle
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36000
+    bitmask: 0x01
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 11
+
+  - platform: modbus_controller
+    name: "Marstek Overtemperature Limit"
+    icon: mdi:thermometer-alert
+    id: "overtemperature_limit"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36000
+    bitmask: 0x02
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 2
+
+  - platform: modbus_controller
+    name: "Marstek Low Temperature Limit"
+    icon: mdi:thermometer-alert
+    id: "low_temperature_limit"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36000
+    bitmask: 0x04
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 3
+
+  - platform: modbus_controller
+    name: "Marstek Fan Abnormal Warning"
+    icon: mdi:fan-alert
+    id: "fan_abnormal_warning"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36000
+    bitmask: 0x08
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 4
+
+  - platform: modbus_controller
+    name: "Marstek Low Battery SOC Warning"
+    icon: mdi:battery-off-outline
+    id: "low_battery_soc_warning"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36000
+    bitmask: 0x10
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 5
+
+  - platform: modbus_controller
+    name: "Marstek Output Overcurrent Warning"
+    icon: mdi:flash-triangle
+    id: "output_overcurrent_warning"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36000
+    bitmask: 0x20
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 6
+
+  - platform: modbus_controller
+    name: "Marstek Abnormal Line Sequence Detection"
+    icon: mdi:flash-triangle
+    id: "abnormal_line_sequence_detection"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36000
+    bitmask: 0x40
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 7
+
+  - platform: modbus_controller
+    name: "Marstek Wifi Abnormal"
+    icon: mdi:wifi-alert
+    id: "wifi_abnormal"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36001
+    bitmask: 0x01
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 8
+
+  - platform: modbus_controller
+    name: "Marstek BLE abnormal"
+    icon: mdi:bluetooth-off
+    id: "ble_abnormal"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36001
+    bitmask: 0x02
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 9
+
+  - platform: modbus_controller
+    name: "Marstek Network abnormal"
+    icon: mdi:network-off
+    id: "network_abnormal"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36001
+    bitmask: 0x04
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 10
+
+  - platform: modbus_controller
+    name: "Marstek CT connection abnormal"
+    id: ct_connection_abnormal_raw
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36001
+    bitmask: 0x08
+    web_server:
+      sorting_group_id: Diagnostic
+      sorting_weight: 3
+
+  - platform: template
+    name: "Marstek CT connection OK"
+    id: ct_connection_ok
+    device_class: connectivity
+    lambda: |-
+      return !id(ct_connection_abnormal_raw).state;
+    web_server:
+      sorting_group_id: Diagnostic
+      sorting_weight: 2
+
+  - platform: modbus_controller
+    name: "Marstek Grid overvoltage"
+    icon: mdi:flash-triangle
+    id: "grid_overvoltage"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36100
+    bitmask: 0x01
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 12
+
+  - platform: modbus_controller
+    name: "Marstek Grid undervoltage"
+    icon: mdi:flash-triangle-outline
+    id: "grid_undervoltage"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36100
+    bitmask: 0x02
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 13
+
+  - platform: modbus_controller
+    name: "Marstek Grid overfrequency"
+    icon: mdi:flash-triangle
+    id: "grid_overfrequency"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36100
+    bitmask: 0x04
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 14
+
+  - platform: modbus_controller
+    name: "Marstek Grid underfrequency"
+    icon: mdi:flash-triangle
+    id: "grid_underfrequency"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36100
+    bitmask: 0x08
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 15
+
+  - platform: modbus_controller
+    name: "Marstek Grid peak voltage abnormal"
+    icon: mdi:alert-plus
+    id: "grid_peak_voltage_abnormal"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36100
+    bitmask: 0x10
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 16
+
+  - platform: modbus_controller
+    name: "Marstek Current Dcover"
+    icon: mdi:flash-triangle
+    id: "current_dcover"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36100
+    bitmask: 0x20
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 17
+
+  - platform: modbus_controller
+    name: "Marstek Voltage Dcover"
+    icon: mdi:flash-triangle
+    id: "voltage_dcover"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36100
+    bitmask: 0x40
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 18
+
+  - platform: modbus_controller
+    name: "Marstek BAT overvoltage"
+    icon: mdi:flash-triangle
+    id: "bat_overvoltage"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36101
+    bitmask: 0x01
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 19
+
+  - platform: modbus_controller
+    name: "Marstek BAT undervoltage"
+    icon: mdi:flash-triangle-outline
+    id: "bat_undervoltage"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36101
+    bitmask: 0x02
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 20
+
+  - platform: modbus_controller
+    name: "Marstek BAT overcurrent"
+    icon: mdi:wave-undercurrent
+    id: "bat_overcurrent"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36101
+    bitmask: 0x04
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 21
+
+  - platform: modbus_controller
+    name: "Marstek BAT low SOC"
+    icon: mdi:battery-off-outline
+    id: "bat_low_soc"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36101
+    bitmask: 0x08
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 22
+
+  - platform: modbus_controller
+    name: "Marstek BAT communication failure"
+    icon: mdi:flash-triangle
+    id: "bat_communication_failure"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36101
+    bitmask: 0x10
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 23
+
+  - platform: modbus_controller
+    name: "Marstek BMS protect"
+    icon: mdi:flash-triangle
+    id: "bms_protect"
+    modbus_controller_id: mt
+    register_type: holding
+    address: 36101
+    bitmask: 0x20
+    web_server:
+      sorting_group_id: Warnings
+      sorting_weight: 24
+
+#   End addings by JP :-)   #
+sensor:
+# Start ORIGINAL Fonske 
+
+  - id: ems_version # No name, since it's internal
+    icon: mdi:factory
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 30200
+    value_type: U_WORD
+    accuracy_decimals: 0
+    skip_updates: 60 # 5 minutes
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            int version = (int)x;
+            char buf[5];
+            sprintf(buf, "V%d", version);
+            id(ems_version_text).publish_state(buf);
+
+  - id: vns_version # No name, since it's internal
+    icon: mdi:factory
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 30202
+    value_type: U_WORD
+    accuracy_decimals: 0
+    skip_updates: 60 # 5 minutes
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            int version = (int)x;
+            char buf[5];
+            sprintf(buf, "V%d", version);
+            id(vns_version_text).publish_state(buf);
+
+  - id: bms_version # No name, since it's internal
+    icon: mdi:factory
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 30204 #31102
+    value_type: U_WORD
+    accuracy_decimals: 0
+    skip_updates: 60 # 5 minutes
+    internal: true
+    on_value:
+      then:
+        - lambda: |-
+            int version = (int)x;
+            char buf[5];
+            sprintf(buf, "V%d", version);
+            id(bms_version_text).publish_state(buf);
+# END ORIGINAL 
+
+
+  - platform: modbus_controller
+    id: inverter_state
+    icon: mdi:text-box
+    modbus_controller_id: mt
+    register_type: holding
+    address: 35100
+    register_count: 1
+    response_size: 2 
+    value_type: U_WORD
+    internal: true
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 30
+
+  - name: "Marstek Wifi Signal Strength"
+    id: "wifi_signal_strength"
+    icon: mdi:wifi
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 30303
+    value_type: U_WORD
+    unit_of_measurement: "dBm"
+    accuracy_decimals: 0
+    filters:
+      - multiply: -1
+      - delta: 3.0
+    skip_updates: 99
+    web_server:
+      sorting_group_id: Diagnostic
+      sorting_weight: 7
+
+
+
+  - name: "Marstek Battery Voltage"
+    id: "battery_voltage"
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 30100 #32100 in V12
+    value_type: U_WORD
+    register_count: 1
+    response_size: 2 
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 2
+    state_class: measurement
+    filters:
+      - multiply: 0.01
+      - delta: 0.5
+      - throttle: 2s
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 16
+
+  - name: "Marstek Battery Current"
+    id: "battery_current"
+    icon: mdi:current-dc
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 30101 #32101 in V12
+    value_type: S_WORD
+    unit_of_measurement: "A"
+    device_class: current
+    accuracy_decimals: 2
+    state_class: measurement
+    filters:
+      - multiply: 0.01
+      - delta: 0.25
+      - throttle: 2s
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 15
+
+  - name: "Marstek Battery State Of Charge"
+    id: "battery_soc"
+    icon: mdi:percent-box-outline
+    on_value:
+      then:
+        - component.update: battery_remaining_capacity
+    platform: modbus_controller
+    device_class: battery
+    state_class: measurement
+    modbus_controller_id: mt
+    register_type: holding
+    address: 32104
+    value_type: U_WORD
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    skip_updates: 29
+    filters:
+     - delta: 1.0
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 5
+
+  - name: "Marstek Battery Total Energy"
+    id: "battery_total_energy"
+    icon: mdi:battery-charging-100
+    platform: modbus_controller
+    device_class: energy_storage
+    state_class: measurement
+    modbus_controller_id: mt
+    register_type: holding
+    address: 32105
+    value_type: U_WORD
+    unit_of_measurement: "kWh"
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 7
+
+  - platform: template
+    name: "Battery Remaining Capacity"
+    id: "battery_remaining_capacity"
+    icon: mdi:battery-arrow-down-outline
+    unit_of_measurement: "kWh"
+    accuracy_decimals: 2
+    update_interval: never
+    lambda: |-
+      if (id(battery_total_energy).has_state() && id(battery_soc).has_state()) {
+        float total_energy = id(battery_total_energy).state;
+        float soc = id(battery_soc).state / 100.0;
+        return roundf(total_energy * soc * 100) / 100; // Ensures two decimal places
+      }
+      return NAN;
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 6
+
+  - name: "Marstek AC Voltage"
+    id: "ac_voltage"
+    icon: mdi:current-ac
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 32200
+    value_type: U_WORD
+    register_count: 1
+    response_size: 2 
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+      - delta: 0.5
+      - throttle: 2s
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 3
+
+  - name: "Marstek AC Current"
+    id: "ac_current"
+    icon: mdi:current-ac
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 32201
+    register_count: 1
+    response_size: 2  
+    value_type: U_WORD
+    unit_of_measurement: "A"
+    device_class: current
+    state_class: measurement
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+      - delta: 0.25
+      - throttle: 2s
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 2
+
+  - name: "Marstek AC Power"
+    id: "ac_power"
+    icon: mdi:flash
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 32202
+    value_type: S_DWORD
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 0
+    filters:
+      - delta: 5.0
+      - throttle: 2s
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 1
+
+# Start Original
+  - name: "Lifetime Charging Energy"
+    id: lifetime_charging_energy
+    icon: mdi:chart-bar
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 33000
+    value_type: U_DWORD
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+    register_count: 2
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 12
+
+  - name: "Lifetime Discharging Energy"
+    id: lifetime_discharging_energy
+    icon: mdi:chart-bar
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 33002
+    value_type: U_DWORD
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+    register_count: 2
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 13
+
+  - name: "Lifetime Round Trip Efficiency"
+    id: lifetime_round_trip_efficiency
+    icon: mdi:percent
+    platform: template
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    state_class: measurement
+    lambda: |-
+      if (!id(lifetime_charging_energy).has_state() ||
+          !id(lifetime_discharging_energy).has_state()) {
+        return NAN;
+      }
+      float total_charge = id(lifetime_charging_energy).state;       // kWh in
+      float total_discharge = id(lifetime_discharging_energy).state; // kWh out
+      if (total_charge <= 0.0f) {
+        return NAN;  // avoid divide-by-zero until we have data
+      }
+      float eff = (total_discharge / total_charge) * 100.0f;
+      // Optional: clamp to a sane range to avoid noise
+      if (eff < 0.0f) eff = 0.0f;
+      if (eff > 110.0f) eff = 110.0f;
+      return eff;
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 14
+
+  - name: "Marstek Balancing Flag RAW"
+    id: marstek_balancing_flag
+    icon: mdi:battery-sync
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34009
+    value_type: U_WORD
+    accuracy_decimals: 0
+    state_class: measurement
+    unit_of_measurement: ""
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 43
+# End Original
+
+  - name: "Marstek Total discharging"
+    id: "total_discharging_energy"
+    icon: mdi:chart-bar
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 33002
+    value_type: U_DWORD
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+    skip_updates: 59
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 13
+
+  - name: "Marstek Daily charging energy"
+    id: "daily_charging_energy"
+    icon: mdi:chart-bar
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 33004
+    value_type: U_DWORD
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+    skip_updates: 59
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 8
+
+  - name: "Marstek Daily discharging energy"
+    id: "daily_discharging_energy"
+    icon: mdi:chart-bar
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 33006
+    value_type: U_DWORD
+    unit_of_measurement: "kWh"
+    device_class: energy
+    state_class: total_increasing
+    accuracy_decimals: 2
+    filters:
+      - multiply: 0.01
+    skip_updates: 59
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 9
+
+  - name: "Marstek Internal Temperature"
+    id: "internal_temperature"
+    icon: mdi:thermometer
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 35000
+    value_type: S_WORD
+    register_count: 1
+    response_size: 2  
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+      - delta: 0.5
+    skip_updates: 149
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 19
+
+  - name: "Marstek Internal MOS1 Temperature"
+    id: "internal_mos1_temperature"
+    icon: mdi:thermometer
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 35001
+    value_type: S_WORD
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+      - delta: 1.0
+    skip_updates: 149
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 20
+
+  - name: "Marstek Internal MOS2 Temperature"
+    id: "internal_mos2_temperature"
+    icon: mdi:thermometer
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 35002
+    value_type: S_WORD
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    filters:
+      - multiply: 0.1
+      - delta: 1.0
+    skip_updates: 149
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 21
+
+  - name: "Marstek Max. Cell Temperature"
+    id: "max_cell_temperature"
+    icon: mdi:thermometer
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 35010
+    value_type: S_WORD
+    register_count: 1
+    response_size: 2  
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    skip_updates: 149
+    filters:
+     - multiply: 1
+     - delta: 0.5
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 22
+
+  - name: "Marstek Min. Cell Temperature"
+    id: "min_cell_temperature"
+    icon: mdi:thermometer
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 35011
+    value_type: S_WORD
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    skip_updates: 149
+    filters:
+     - multiply: 1
+     - delta: 0.5    
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 23
+
+  - name: "Marstek Max. Cell Voltage"
+    icon: mdi:sine-wave
+    id: max_cell_voltage
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 37007
+    value_type: U_WORD
+    register_count: 1
+    response_size: 2  
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 2
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 29
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 24
+
+  - name: "Marstek Min. Cell Voltage"
+    icon: mdi:sine-wave
+    id: min_cell_voltage
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 37008
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 2
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 29
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 25
+
+  - platform: template
+    name: "Cell Voltage difference"
+    icon: mdi:sine-wave
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    lambda: |-
+      if (isnan(id(max_cell_voltage).state) || isnan(id(min_cell_voltage).state)) {
+        return NAN;
+      }
+      return id(max_cell_voltage).state - id(min_cell_voltage).state;
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 26
+
+  - platform: wifi_signal
+    name: "ESP WiFi Signal Strength"
+    icon: mdi:wifi
+    id: "esp_wifi_signal_strength"
+    update_interval: 300s
+    filters:
+      - delta: 5.0
+    web_server:
+      sorting_group_id: Diagnostic
+      sorting_weight: 8
+
+    # Einde ----- JP added 2 ---------#    
+
+# Start Original
+  - name: "Cell 1 Voltage"  #V3 only
+    id: cell_1_voltage
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34018
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 27
+
+  - name: "Cell 2 Voltage"  #V3 only
+    id: cell_2_voltage
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34019
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 28
+
+  - name: "Cell 3 Voltage"  #V3 only
+    id: cell_3_voltage
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34020
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 29
+
+  - name: "Cell 4 Voltage"  #V3 only
+    id: cell_4_voltage
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34021
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 30
+
+  - name: "Cell 5 Voltage"  #V3 only
+    id: cell_5_voltage
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34022
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 31
+
+  - name: "Cell 6 Voltage"  #V3 only
+    id: cell_6_voltage
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34023
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 32
+
+  - name: "Cell 7 Voltage"  #V3 only
+    id: cell_7_voltage
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34024
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 33
+
+  - name: "Cell 8 Voltage"  #V3 only
+    id: cell_8_voltage
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34025
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 34
+
+  - name: "Cell 9 Voltage"  #V3 only
+    id: cell_9_voltage
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34026
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 35
+
+  - name: "Cell 10 Voltage"  #V3 only
+    id: cell_10_voltage
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34027
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 36
+
+  - name: "Cell 11 Voltage"  #V3 only
+    id: cell_11_voltage
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34028
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 37
+
+  - name: "Cell 12 Voltage"  #V3 only
+    id: cell_12_voltage
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34029
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 38
+
+  - name: "Cell 13 Voltage"  #V3 only
+    id: cell_13_voltage
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34030
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 39
+
+  - name: "Cell 14 Voltage"  #V3 only
+    id: cell_14_voltage
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34031
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 40
+
+  - name: "Cell 15 Voltage"  #V3 only
+    id: cell_15_voltage
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34032
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 41
+
+
+  - name: "Cell 16 Voltage"  #V3 only
+    id: cell_16_voltage
+    icon: mdi:sine-wave
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 34033
+    value_type: U_WORD
+    unit_of_measurement: "V"
+    device_class: voltage
+    accuracy_decimals: 3
+    state_class: measurement
+    filters:
+      - multiply: 0.001
+    skip_updates: 10
+    web_server:
+      sorting_group_id: Info
+      sorting_weight: 42
+
+# End Original
+
+select:
+  - name: "Marstek RS485 Control Mode"
+    id: "lilygo_rs485_marstek_rs485_control_mode"
+    icon: mdi:connection
+    platform: modbus_controller
+    modbus_controller_id: mt
+    address: 42000
+    value_type: U_WORD
+    optionsmap:
+      "enable": 21930
+      "disable": 21947
+    skip_updates: 0 # 0 seconds
+    web_server:
+      sorting_group_id: Control1  # only as info in webserver, needs to be visible for automations
+      sorting_weight: 1
+#    web_server:
+#      sorting_group_id: Controls  # Not used in group Control V3
+#      sorting_weight: 1
+
+    on_value:
+      then:
+        - lambda: |-
+            static std::string last_val = "";
+            std::string curr_val = x.c_str();
+            if (curr_val != last_val) {
+              ESP_LOGI("control", "RS485 control mode gewijzigd -> %s", curr_val.c_str());
+              last_val = curr_val;
+            }
+
+  - name: "Marstek Forcible Charge-Discharge" 
+    id: "lilygo_rs485_marstek_forcible_charge_discharge"
+    platform: modbus_controller
+    modbus_controller_id: mt
+    address: 42010
+    value_type: U_WORD
+    optionsmap:
+      "stop": 0
+      "charge": 1
+      "discharge": 2
+    skip_updates: 2 # 10 seconds
+    web_server:
+      sorting_group_id: Controls
+      sorting_weight: 6
+    on_value:
+      then:
+      - lambda: |-
+          static std::string last_val = "";
+          std::string curr_val = x.c_str();
+          if (curr_val != last_val) {
+            ESP_LOGI("control", "Forcible mode gewijzigd -> %s", curr_val.c_str());
+            last_val = curr_val;
+          }
+
+
+  - name: "Marstek Backup Function"
+    id: "lilygo_rs485_marstek_backup_function"
+    platform: modbus_controller
+    modbus_controller_id: mt
+    address: 41200
+    value_type: U_WORD
+    optionsmap:
+      "enable": 0
+      "disable": 1
+    skip_updates: 2 # 10 seconds
+    web_server:
+      sorting_group_id: Controls
+      sorting_weight: 13 
+
+  - name: "Marstek User Work Mode"
+    id: "lilygo_rs485_marstek_user_work_mode"
+    icon: mdi:auto-mode
+    platform: modbus_controller
+    modbus_controller_id: mt
+    address: 43000
+    value_type: U_WORD
+    optionsmap:
+      "manual": 0
+      "anti-feed": 1
+      "ai": 2
+    skip_updates: 2 # 10 seconds 
+    web_server:
+      sorting_group_id: Controls
+      sorting_weight: 5
+    on_value:
+      then:
+        - lambda: |-
+            static std::string last_val = "";
+            std::string curr_val = x.c_str();
+            if (curr_val != last_val) {
+              ESP_LOGI("control", "User work mode gewijzigd -> %s", curr_val.c_str());
+              last_val = curr_val;
+            }
+
+number:
+  - name: "Marstek Forcible Charge Power"
+    id: "lilygo_rs485_marstek_forcible_charge_power"
+    icon: mdi:tune-variant
+    mode: box
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 42020
+    value_type: U_WORD
+    unit_of_measurement: "W"
+    min_value: 0
+    max_value: 2500
+    step: 1
+    skip_updates: 2 # 10 seconds
+    web_server:
+      sorting_group_id: Controls
+      sorting_weight: 7
+    on_value:
+      then:
+        - lambda: |-
+            static int last_val = -1;
+            int curr_val = x;
+            if (curr_val != last_val) {
+              ESP_LOGI("control", "Charge power ingesteld -> %d W", curr_val);
+              last_val = curr_val;
+            }
+
+  - name: "Marstek Charge To SOC"
+    id: "lilygo_rs485_marstek_charge_to_soc"
+    icon: mdi:battery-charging-medium 
+    mode: box
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 42011
+    value_type: U_WORD
+    unit_of_measurement: "%"
+    min_value: 12
+    max_value: 100
+    step: 1
+    web_server:
+      sorting_group_id: Controls
+      sorting_weight: 9
+    on_value:
+      then:
+        - lambda: |-
+            static int last_val = -1;
+            int curr_val = x;
+            if (curr_val != last_val) {
+              ESP_LOGI("control", "Charge To SOC gewijzigd naar: %d%%", curr_val);
+              last_val = curr_val;
+            }
+
+
+  - name: "Marstek Forcible Discharge Power"
+    id: "lilygo_rs485_marstek_forcible_discharge_power"
+    icon: mdi:tune-variant
+    mode: box
+    platform: modbus_controller
+    modbus_controller_id: mt
+    register_type: holding
+    address: 42021
+    value_type: U_WORD
+    unit_of_measurement: "W"
+    min_value: 0
+    max_value: 2500
+    step: 1
+    skip_updates: 2 # 10 seconds
+    web_server:
+      sorting_group_id: Controls
+      sorting_weight: 8
+    on_value:
+      then:
+        - lambda: |-
+            static int last_val = -1;
+            int curr_val = x;
+            if (curr_val != last_val) {
+              ESP_LOGI("control", "Discharge power ingesteld -> %d W", curr_val);
+              last_val = curr_val;
+            }
+
+# Error V3 :
+            #  - name: "Marstek Charging Cutoff Capacity"
+            #    id: "charging_cutoff_capacity"
+            #        icon: mdi:battery-90
+            #        platform: modbus_controller
+            #    modbus_controller_id: mt
+            #    register_type: holding
+            #    address: 44000
+# Error V3 
+          #  - name: "Marstek Max. Discharge Power"
+          #    id: "max_discharge_power"
+          #    icon: mdi:tune-variant
+          #    mode: box
+          #    platform: modbus_controller
+          #    modbus_controller_id: mt
+          #    register_type: holding
+          #    address: 44003
+# Error in V3 ?
+          #  - name: "Marstek Discharging Cutoff Capacity"
+          #    id: "discharging_cutoff_capacity"
+          #    icon: mdi:battery-10
+          #    platform: modbus_controller
+          #    modbus_controller_id: mt
+          #    register_type: holding
+          #    address: 44001
+
+# Error V3
+          #  - name: "Marstek Max. Charge Power"
+          #   id: "max_charge_power"
+          #    icon: mdi:tune-variant
+          #    mode: box
+          #    platform: modbus_controller
+          #    modbus_controller_id: mt
+          #    register_type: holding
+          #    address: 44002
+
+# Error V3
+#  - platform: modbus_controller
+#    id: software_version
+#    icon: mdi:factory
+#    modbus_controller_id: mt
+#    register_type: holding
+#    address: 31100
+#    value_type: U_WORD
+
+
+###############################################################################
+# LED
+###############################################################################
+  - platform: template
+    name: "Led Brightness"
+    id: led_brightness
+    icon: mdi:brightness-6
+    unit_of_measurement: "%"
+    initial_value: 22
+    min_value: 0
+    max_value: 100
+    step: 1
+    mode: slider
+    optimistic: true
+    web_server:
+      sorting_group_id: Diagnostic
+      sorting_weight: 16
+
+light:
+  - platform: esp32_rmt_led_strip
+    id: status_led
+    icon: mdi:led-outline
+    name: "Status LED"
+    chipset: WS2812
+    pin: GPIO4
+    num_leds: 1
+    rgb_order: GRB
+    web_server:
+      sorting_group_id: Diagnostic
+      sorting_weight: 15
+    effects:
+      - pulse:
+          name: "Fast Blink Red"
+          transition_length: 0.3s
+          update_interval: 0.6s
+          min_brightness: 20%
+          max_brightness: 100%
+      - pulse:
+          name: "Fast Blink Purple"
+          transition_length: 0.3s
+          update_interval: 0.6s
+          min_brightness: 20%
+          max_brightness: 100%
+      - pulse:
+          name: "Fast Blink Blue"
+          transition_length: 0.3s
+          update_interval: 0.6s
+          min_brightness: 20%
+          max_brightness: 100%
+
+
+interval:
+  - interval: 15s
+    then:
+      - lambda: |-
+          static int last_status = 0;
+          
+          bool batt_ok = !isnan(id(battery_soc).state);
+          bool wifi_ok = id(wifi_signal_strength).state > -80.0f;
+          
+          int new_status = 0;
+          if (batt_ok && wifi_ok) {
+            new_status = 1;  // grün
+          } else if (!batt_ok && !wifi_ok) {
+            new_status = 2;  // rot blinkend
+          } else if (!wifi_ok) {
+            new_status = 3;  // blau blinkend
+          } else {
+            new_status = 4;  // lila blinkend
+          }
+          
+          if (new_status == last_status) return;
+          last_status = new_status;
+          
+          // Status 1: grün
+          if (last_status == 1) {
+            id(status_led)->turn_on()
+              .set_red(0.0f)
+              .set_green(1.0f)
+              .set_blue(0.0f)
+              .set_brightness(0.3f)
+              .set_effect("none")
+              .perform();
+          }
+          // Status 2: rot blinkend
+          else if (last_status == 2) {
+            id(status_led)->turn_on()
+              .set_red(1.0f)
+              .set_green(0.0f)
+              .set_blue(0.0f)
+              .set_effect("Fast Blink Red")
+              .perform();
+          }
+          // Status 3: blau blinkend
+          else if (last_status == 3) {
+            id(status_led)->turn_on()
+              .set_red(0.0f)
+              .set_green(0.0f)
+              .set_blue(1.0f)
+              .set_effect("Fast Blink Blue")
+              .perform();
+          }
+          // Status 4: lila blinkend
+          else if (last_status == 4) {
+            id(status_led)->turn_on()
+              .set_red(1.0f)
+              .set_green(0.0f)
+              .set_blue(1.0f)
+              .set_effect("Fast Blink Purple")
+              .perform();
+          }
+
